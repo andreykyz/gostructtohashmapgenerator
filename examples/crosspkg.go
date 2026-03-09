@@ -1,6 +1,6 @@
 package examples
 
-import "github.com/andrey/gostructtohashmapgenerator/models"
+import "github.com/andrey/gostructtohashmapgenerator/examples/models"
 
 type Account struct {
 	ID      int         `structtomap:"id"`
