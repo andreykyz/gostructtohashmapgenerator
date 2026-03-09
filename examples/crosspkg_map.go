@@ -6,7 +6,7 @@ package examples
 func AccountToMap(a Account) map[string]any {
 	m := make(map[string]any)
 	m["id"] = a.ID
-	m["owner"] = a.Owner
+	m["owner"] = models.UserToMap(a.Owner)
 	m["balance"] = a.Balance
 	return m
 }

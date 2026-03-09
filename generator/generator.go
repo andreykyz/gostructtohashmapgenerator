@@ -88,6 +88,32 @@ func hasTaggedField(st parser.StructInfo, opts Options) bool {
 	return false
 }
 
+// converterForType returns the name of the ToMap function for a given type, or empty if no converter should be used.
+func converterForType(typ string, structMap map[string]parser.StructInfo) string {
+	// Strip pointer and slice prefixes
+	typ = strings.TrimPrefix(typ, "*")
+	typ = strings.TrimPrefix(typ, "[]")
+	// If the type is a built-in, no converter
+	if isBuiltin(typ) {
+		return ""
+	}
+	// If the type is defined in the same file, we have a converter
+	if _, ok := structMap[typ]; ok {
+		return typ + "ToMap"
+	}
+	// If the type contains a dot, assume it's a qualified type from another package.
+	// We'll generate a converter using the same qualified name.
+	if strings.Contains(typ, ".") {
+		// Ensure the base type is exported (starts with uppercase)
+		parts := strings.Split(typ, ".")
+		base := parts[len(parts)-1]
+		if len(base) > 0 && base[0] >= 'A' && base[0] <= 'Z' {
+			return typ + "ToMap"
+		}
+	}
+	return ""
+}
+
 // generateStructFunction creates a ToMap function for a single struct.
 func generateStructFunction(st parser.StructInfo, opts Options, structMap map[string]parser.StructInfo) string {
 	funcName := st.Name + "ToMap"
@@ -105,10 +131,10 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 		if key == "" {
 			key = f.Name
 		}
-		// Check if field type is a struct that we have a function for
-		if nested, ok := structMap[f.Type]; ok && nested.Name != "" {
-			// Ensure the nested struct's ToMap function exists (it will because we generated it)
-			lines = append(lines, fmt.Sprintf("    m[%q] = %sToMap(%s.%s)", key, f.Type, recv, f.Name))
+		// Determine if we should call a converter for this field
+		converter := converterForType(f.Type, structMap)
+		if converter != "" {
+			lines = append(lines, fmt.Sprintf("    m[%q] = %s(%s.%s)", key, converter, recv, f.Name))
 		} else {
 			lines = append(lines, fmt.Sprintf("    m[%q] = %s.%s", key, recv, f.Name))
 		}

@@ -44,3 +44,29 @@ func TestGenerateAllFields(t *testing.T) {
 		t.Error("missing expected functions")
 	}
 }
+
+func TestGenerateCrossPackage(t *testing.T) {
+	opts := Options{Tag: "structtomap"}
+	code, err := Generate("../examples/crosspkg.go", opts)
+	if err != nil {
+		t.Fatalf("Generate failed for crosspkg.go: %v", err)
+	}
+	if len(code) == 0 {
+		t.Fatal("generated code is empty")
+	}
+	codeStr := string(code)
+	if !strings.Contains(codeStr, "AccountToMap") {
+		t.Error("generated code missing AccountToMap")
+	}
+	// Should contain the field mappings
+	if !strings.Contains(codeStr, `m["id"]`) {
+		t.Error("missing id field")
+	}
+	if !strings.Contains(codeStr, `m["owner"]`) {
+		t.Error("missing owner field")
+	}
+	if !strings.Contains(codeStr, `m["balance"]`) {
+		t.Error("missing balance field")
+	}
+	// Ensure no syntax errors by trying to parse? (optional)
+}
