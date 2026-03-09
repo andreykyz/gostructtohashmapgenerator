@@ -3,6 +3,7 @@ package generator
 import (
 	"fmt"
 	"go/format"
+	"io/ioutil"
 	"strings"
 
 	"github.com/andrey/gostructtohashmapgenerator/parser"
@@ -137,6 +138,20 @@ func isBuiltin(typ string) bool {
 
 // guessPackageName attempts to extract package name from file path.
 func guessPackageName(file string) string {
-	// Default
+	// Quick and dirty: read first line containing "package"
+	data, err := ioutil.ReadFile(file)
+	if err != nil {
+		return "main"
+	}
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "package ") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				return parts[1]
+			}
+		}
+	}
 	return "main"
 }
