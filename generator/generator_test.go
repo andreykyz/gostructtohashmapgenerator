@@ -7,7 +7,7 @@ import (
 
 func TestGenerate(t *testing.T) {
 	opts := Options{Tag: "structtomap"}
-	code, err := Generate("examples/person.go", opts)
+	code, err := Generate("../examples/person.go", opts)
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestGenerate(t *testing.T) {
 
 func TestGenerateAllFields(t *testing.T) {
 	opts := Options{All: true}
-	code, err := Generate("examples/person.go", opts)
+	code, err := Generate("../examples/person.go", opts)
 	if err != nil {
 		t.Fatalf("Generate with All=true failed: %v", err)
 	}
