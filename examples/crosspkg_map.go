@@ -2,6 +2,10 @@
 
 package examples
 
+import (
+	"github.com/andrey/gostructtohashmapgenerator/examples/models"
+)
+
 // AccountToMap converts a Account to map[string]any.
 func AccountToMap(a Account) map[string]any {
 	m := make(map[string]any)
