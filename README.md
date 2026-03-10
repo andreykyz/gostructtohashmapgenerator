@@ -8,6 +8,7 @@ A Go tool that automatically generates code to convert Go structs into `map[stri
 - **Nested Struct Support**: Recursively converts nested struct fields into nested maps, including cross‑package types.
 - **Code Generation**: Produces ready‑to‑use Go functions that perform the conversion at runtime. **One function per struct** – even if the same struct appears nested multiple times, a single conversion function is generated and reused.
 - **Import Preservation**: Automatically copies import statements from the source file into the generated code.
+- **Reverse Conversion**: Generate `MapTo<Struct>` functions that convert `map[string]any` back to struct instances with error handling.
 - **CLI & Library**: Can be used as a command‑line tool or imported as a library.
 - **Zero Dependencies**: Pure Go, no external dependencies.
 
@@ -69,6 +70,40 @@ fmt.Printf("%#v", m)
 
 - **Exclude Untagged Fields**: By default, only tagged fields are included. Use `-all` to include all fields.
 - **Custom Tag Name**: Use `-tag=myTag` to look for a different tag.
+- **Reverse Conversion**: Use `-reverse` to generate `MapTo<Struct>` functions that convert a map back to a struct (returns the struct and an error).
+
+## Reverse Conversion
+
+When the `-reverse` flag is provided, the generator creates additional functions `MapTo<StructName>` that accept a `map[string]any` and return a struct instance (or an error if the map is missing required fields or contains type mismatches).
+
+### Example
+
+Given the same `Person` struct, generating with `-reverse` will produce:
+
+```go
+// MapToPerson converts a map[string]any to a Person.
+func MapToPerson(m map[string]any) (Person, error) { ... }
+```
+
+You can use it like this:
+
+```go
+m := map[string]any{
+    "name": "Bob",
+    "age": 25,
+    "address": map[string]any{
+        "city": "London",
+        "country": "UK",
+    },
+}
+p, err := MapToPerson(m)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("%+v", p)
+```
+
+Nested structs are automatically converted using their respective `MapTo...` functions. Errors are propagated with field‑level context.
 
 ## Library Usage
 
