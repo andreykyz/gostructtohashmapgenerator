@@ -70,3 +70,37 @@ func TestGenerateCrossPackage(t *testing.T) {
 	}
 	// Ensure no syntax errors by trying to parse? (optional)
 }
+
+func TestGenerateReverse(t *testing.T) {
+	opts := Options{Tag: "structtomap", Reverse: true}
+	code, err := Generate("../examples/person.go", opts)
+	if err != nil {
+		t.Fatalf("Generate with Reverse failed: %v", err)
+	}
+	if len(code) == 0 {
+		t.Fatal("generated code is empty")
+	}
+	codeStr := string(code)
+	// Should contain forward functions
+	if !strings.Contains(codeStr, "PersonToMap") {
+		t.Error("generated code missing PersonToMap")
+	}
+	if !strings.Contains(codeStr, "AddressToMap") {
+		t.Error("generated code missing AddressToMap")
+	}
+	// Should contain reverse functions
+	if !strings.Contains(codeStr, "MapToPerson") {
+		t.Error("generated code missing MapToPerson")
+	}
+	if !strings.Contains(codeStr, "MapToAddress") {
+		t.Error("generated code missing MapToAddress")
+	}
+	// Check that MapToPerson calls MapToAddress for nested field
+	if !strings.Contains(codeStr, "MapToAddress") {
+		t.Error("MapToPerson should call MapToAddress")
+	}
+	// Ensure fmt import is present
+	if !strings.Contains(codeStr, `import "fmt"`) && !strings.Contains(codeStr, `import (`) {
+		t.Error("fmt import missing for reverse functions")
+	}
+}

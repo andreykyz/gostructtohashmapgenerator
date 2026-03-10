@@ -12,10 +12,11 @@ import (
 
 func main() {
 	var (
-		input  = flag.String("input", "", "Input Go source file containing structs")
-		output = flag.String("output", "", "Output file for generated code (default: <input>_map.go)")
-		tag    = flag.String("tag", "structtomap", "Struct tag to look for")
-		all    = flag.Bool("all", false, "Include fields without the tag")
+		input   = flag.String("input", "", "Input Go source file containing structs")
+		output  = flag.String("output", "", "Output file for generated code (default: <input>_map.go)")
+		tag     = flag.String("tag", "structtomap", "Struct tag to look for")
+		all     = flag.Bool("all", false, "Include fields without the tag")
+		reverse = flag.Bool("reverse", false, "Generate reverse conversion functions (MapTo...)")
 	)
 	flag.Parse()
 
@@ -32,8 +33,9 @@ func main() {
 	}
 
 	opts := generator.Options{
-		Tag: *tag,
-		All: *all,
+		Tag:     *tag,
+		All:     *all,
+		Reverse: *reverse,
 	}
 	code, err := generator.Generate(*input, opts)
 	if err != nil {
