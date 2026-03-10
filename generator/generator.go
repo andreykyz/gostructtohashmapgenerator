@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/andrey/gostructtohashmapgenerator/parser"
+	"github.com/andreykyz/gostructtohashmapgenerator/parser"
 )
 
 // Options holds configuration for code generation.

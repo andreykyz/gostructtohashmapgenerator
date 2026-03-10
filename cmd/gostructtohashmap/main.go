@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/andrey/gostructtohashmapgenerator/generator"
+	"github.com/andreykyz/gostructtohashmapgenerator/generator"
 )
 
 func main() {

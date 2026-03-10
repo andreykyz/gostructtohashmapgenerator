@@ -15,13 +15,13 @@ A Go tool that automatically generates code to convert Go structs into `map[stri
 ## Installation
 
 ```bash
-go install github.com/andrey/gostructtohashmapgenerator/cmd/gostructtohashmap@latest
+go install github.com/andreykyz/gostructtohashmapgenerator/cmd/gostructtohashmap@latest
 ```
 
 Or clone the repository and build locally:
 
 ```bash
-git clone https://github.com/andrey/gostructtohashmapgenerator.git
+git clone https://github.com/andreykyz/gostructtohashmapgenerator.git
 cd gostructtohashmapgenerator
 go build ./cmd/gostructtohashmap
 ```
@@ -110,7 +110,7 @@ Nested structs are automatically converted using their respective `MapTo...` fun
 You can also use the generator programmatically:
 
 ```go
-import "github.com/andrey/gostructtohashmapgenerator/generator"
+import "github.com/andreykyz/gostructtohashmapgenerator/generator"
 
 code, err := generator.Generate("person.go", generator.Options{
     Tag: "structtomap",

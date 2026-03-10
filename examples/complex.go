@@ -1,7 +1,7 @@
 package examples
 
 import (
-	"github.com/andrey/gostructtohashmapgenerator/examples/models"
+	"github.com/andreykyz/gostructtohashmapgenerator/examples/models"
 )
 
 // ComplexStruct demonstrates a variety of field types and nesting.

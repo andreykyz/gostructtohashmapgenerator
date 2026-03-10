@@ -50,7 +50,7 @@ Create a Go project that:
 - Generated files: `*_map.go`
 
 ## Commands Executed
-- `go mod init github.com/andrey/gostructtohashmapgenerator`
+- `go mod init github.com/andreykyz/gostructtohashmapgenerator`
 - `go build ./cmd/gostructtohashmap`
 - `./gostructtohashmap -input=examples/person.go -output=examples/person_map.go`
 - `go test ./parser ./generator`

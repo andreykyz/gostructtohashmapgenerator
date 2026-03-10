@@ -10,7 +10,7 @@ import (
 // ImportInfo holds information about an import.
 type ImportInfo struct {
 	Alias string // alias (e.g., "models" or empty if none)
-	Path  string // import path (e.g., "github.com/andrey/gostructtohashmapgenerator/examples/models")
+	Path  string // import path (e.g., "github.com/andreykyz/gostructtohashmapgenerator/examples/models")
 }
 
 // ParseImports returns imports from a Go source file.

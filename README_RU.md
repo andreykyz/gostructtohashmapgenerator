@@ -15,13 +15,13 @@
 ## Установка
 
 ```bash
-go install github.com/andrey/gostructtohashmapgenerator/cmd/gostructtohashmap@latest
+go install github.com/andreykyz/gostructtohashmapgenerator/cmd/gostructtohashmap@latest
 ```
 
 Или клонируйте репозиторий и соберите локально:
 
 ```bash
-git clone https://github.com/andrey/gostructtohashmapgenerator.git
+git clone https://github.com/andreykyz/gostructtohashmapgenerator.git
 cd gostructtohashmapgenerator
 go build ./cmd/gostructtohashmap
 ```
@@ -110,7 +110,7 @@ fmt.Printf("%+v", p)
 Вы также можете использовать генератор программно:
 
 ```go
-import "github.com/andrey/gostructtohashmapgenerator/generator"
+import "github.com/andreykyz/gostructtohashmapgenerator/generator"
 
 code, err := generator.Generate("person.go", generator.Options{
     Tag: "structtomap",
