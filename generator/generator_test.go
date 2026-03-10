@@ -59,13 +59,13 @@ func TestGenerateCrossPackage(t *testing.T) {
 		t.Error("generated code missing AccountToMap")
 	}
 	// Should contain the field mappings
-	if !strings.Contains(codeStr, `m["id"]`) {
+	if !strings.Contains(codeStr, `out["id"]`) {
 		t.Error("missing id field")
 	}
-	if !strings.Contains(codeStr, `m["owner"]`) {
+	if !strings.Contains(codeStr, `out["owner"]`) {
 		t.Error("missing owner field")
 	}
-	if !strings.Contains(codeStr, `m["balance"]`) {
+	if !strings.Contains(codeStr, `out["balance"]`) {
 		t.Error("missing balance field")
 	}
 	// Ensure no syntax errors by trying to parse? (optional)
