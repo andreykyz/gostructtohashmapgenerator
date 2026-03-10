@@ -186,7 +186,7 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 	lines := []string{
 		fmt.Sprintf("// %s converts a %s to map[string]any.", funcName, st.Name),
 		fmt.Sprintf("func %s(%s %s) map[string]any {", funcName, recv, st.Name),
-		"    m := make(map[string]any)",
+		"    out := make(map[string]any)",
 	}
 	for _, f := range st.Fields {
 		if f.TagValue == "" && !opts.All {
@@ -199,12 +199,49 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 		// Determine if we should call a converter for this field
 		converter := converterForType(f.Type, structMap)
 		if converter != "" {
-			lines = append(lines, fmt.Sprintf("    m[%q] = %s(%s.%s)", key, converter, recv, f.Name))
+			// Check if the field is a slice, map, or pointer
+			if isSliceType(f.Type) {
+				// Generate slice conversion loop
+				lines = append(lines, fmt.Sprintf("    // Convert slice %s", f.Name))
+				lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
+				lines = append(lines, fmt.Sprintf("        sliceVal := make([]any, len(%s.%s))", recv, f.Name))
+				lines = append(lines, fmt.Sprintf("        for i, v := range %s.%s {", recv, f.Name))
+				lines = append(lines, fmt.Sprintf("            sliceVal[i] = %s(v)", converter))
+				lines = append(lines, "        }")
+				lines = append(lines, fmt.Sprintf("        out[%q] = sliceVal", key))
+				lines = append(lines, "    } else {")
+				lines = append(lines, fmt.Sprintf("        out[%q] = nil", key))
+				lines = append(lines, "    }")
+			} else if isMapType(f.Type) {
+				// Generate map conversion loop
+				lines = append(lines, fmt.Sprintf("    // Convert map %s", f.Name))
+				lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
+				lines = append(lines, fmt.Sprintf("        mapVal := make(map[string]any, len(%s.%s))", recv, f.Name))
+				lines = append(lines, fmt.Sprintf("        for k, v := range %s.%s {", recv, f.Name))
+				lines = append(lines, fmt.Sprintf("            mapVal[k] = %s(v)", converter))
+				lines = append(lines, "        }")
+				lines = append(lines, fmt.Sprintf("        out[%q] = mapVal", key))
+				lines = append(lines, "    } else {")
+				lines = append(lines, fmt.Sprintf("        out[%q] = nil", key))
+				lines = append(lines, "    }")
+			} else if isPointerType(f.Type) {
+				// Generate pointer conversion
+				lines = append(lines, fmt.Sprintf("    // Convert pointer %s", f.Name))
+				lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
+				lines = append(lines, fmt.Sprintf("        out[%q] = %s(*%s.%s)", key, converter, recv, f.Name))
+				lines = append(lines, "    } else {")
+				lines = append(lines, fmt.Sprintf("        out[%q] = nil", key))
+				lines = append(lines, "    }")
+			} else {
+				// Direct converter call
+				lines = append(lines, fmt.Sprintf("    out[%q] = %s(%s.%s)", key, converter, recv, f.Name))
+			}
 		} else {
-			lines = append(lines, fmt.Sprintf("    m[%q] = %s.%s", key, recv, f.Name))
+			// No converter, direct assignment
+			lines = append(lines, fmt.Sprintf("    out[%q] = %s.%s", key, recv, f.Name))
 		}
 	}
-	lines = append(lines, "    return m", "}")
+	lines = append(lines, "    return out", "}")
 	return strings.Join(lines, "\n")
 }
 
@@ -291,6 +328,72 @@ func isBuiltin(typ string) bool {
 		}
 	}
 	return false
+}
+
+// isSliceType returns true if the type is a slice (starts with "[]").
+func isSliceType(typ string) bool {
+	return strings.HasPrefix(typ, "[]")
+}
+
+// isMapType returns true if the type is a map (starts with "map[").
+func isMapType(typ string) bool {
+	return strings.HasPrefix(typ, "map[")
+}
+
+// isPointerType returns true if the type is a pointer (starts with "*").
+func isPointerType(typ string) bool {
+	return strings.HasPrefix(typ, "*")
+}
+
+// elementType returns the inner type for slices, maps, and pointers.
+// For slice "[]T" returns "T".
+// For map "map[K]V" returns "V".
+// For pointer "*T" returns "T".
+// For other types returns the original type.
+func elementType(typ string) string {
+	if isSliceType(typ) {
+		return typ[2:]
+	}
+	if isMapType(typ) {
+		// Find the closing bracket after "map["
+		// Simple heuristic: assume map[K]V where K is a simple type (no nested maps).
+		// We'll find the first ']' after 'map['.
+		start := strings.Index(typ, "[")
+		end := strings.Index(typ, "]")
+		if start >= 0 && end > start {
+			return typ[end+1:]
+		}
+	}
+	if isPointerType(typ) {
+		return typ[1:]
+	}
+	return typ
+}
+
+// fieldToMapExpr returns a Go expression that converts the field value to a map[string]any compatible value.
+func fieldToMapExpr(fieldType, fieldName, recv string, structMap map[string]parser.StructInfo) string {
+	// Check if we need a converter for the element type
+	elem := elementType(fieldType)
+	converter := converterForType(elem, structMap)
+	if converter == "" {
+		// No converter, direct assignment
+		return fmt.Sprintf("%s.%s", recv, fieldName)
+	}
+	// We have a converter for the element type
+	if isSliceType(fieldType) {
+		// Generate slice conversion
+		return fmt.Sprintf("func() []any {\n            s := %s.%s\n            out := make([]any, len(s))\n            for i, v := range s {\n                out[i] = %s(v)\n            }\n            return out\n        }()", recv, fieldName, converter)
+	}
+	if isMapType(fieldType) {
+		// Generate map conversion
+		return fmt.Sprintf("func() map[string]any {\n            m := %s.%s\n            out := make(map[string]any, len(m))\n            for k, v := range m {\n                out[k] = %s(v)\n            }\n            return out\n        }()", recv, fieldName, converter)
+	}
+	if isPointerType(fieldType) {
+		// Generate pointer conversion (handle nil)
+		return fmt.Sprintf("func() any {\n            if %s.%s == nil {\n                return nil\n            }\n            return %s(*%s.%s)\n        }()", recv, fieldName, converter, recv, fieldName)
+	}
+	// Direct converter call
+	return fmt.Sprintf("%s(%s.%s)", converter, recv, fieldName)
 }
 
 // guessPackageName attempts to extract package name from file path.
