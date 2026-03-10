@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -43,7 +42,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := ioutil.WriteFile(*output, code, 0644); err != nil {
+	if err := os.WriteFile(*output, code, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write output: %v\n", err)
 		os.Exit(1)
 	}

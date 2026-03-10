@@ -3,7 +3,7 @@ package generator
 import (
 	"fmt"
 	"go/format"
-	"io/ioutil"
+	"os"
 	"sort"
 	"strings"
 
@@ -469,7 +469,7 @@ func fieldToMapExpr(fieldType, fieldName, recv string, structMap map[string]pars
 // guessPackageName attempts to extract package name from file path.
 func guessPackageName(file string) string {
 	// Quick and dirty: read first line containing "package"
-	data, err := ioutil.ReadFile(file)
+	data, err := os.ReadFile(file)
 	if err != nil {
 		return "main"
 	}

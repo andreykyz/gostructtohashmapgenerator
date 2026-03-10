@@ -4,7 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
+	"os"
 	"strings"
 )
 
@@ -46,7 +46,7 @@ func ParseFile(filename, tag string) ([]StructInfo, error) {
 
 // ParseAllStructs returns all struct definitions in the file, regardless of tags.
 func ParseAllStructs(filename string) ([]StructInfo, error) {
-	src, err := ioutil.ReadFile(filename)
+	src, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}

@@ -3,7 +3,7 @@ package parser
 import (
 	"go/parser"
 	"go/token"
-	"io/ioutil"
+	"os"
 	"strings"
 )
 
@@ -15,7 +15,7 @@ type ImportInfo struct {
 
 // ParseImports returns imports from a Go source file.
 func ParseImports(filename string) ([]ImportInfo, error) {
-	src, err := ioutil.ReadFile(filename)
+	src, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
