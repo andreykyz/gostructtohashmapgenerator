@@ -173,7 +173,9 @@ func reverseConverterForType(typ string, structMap map[string]parser.StructInfo)
 		parts := strings.Split(typ, ".")
 		base := parts[len(parts)-1]
 		if len(base) > 0 && base[0] >= 'A' && base[0] <= 'Z' {
-			return "MapTo" + base
+			// Keep the package prefix
+			pkg := strings.Join(parts[:len(parts)-1], ".")
+			return pkg + ".MapTo" + base
 		}
 	}
 	return ""
@@ -196,8 +198,9 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 		if key == "" {
 			key = f.Name
 		}
-		// Determine if we should call a converter for this field
-		converter := converterForType(f.Type, structMap)
+		// Determine the element type and converter
+		elem := elementType(f.Type)
+		converter := converterForType(elem, structMap)
 		if converter != "" {
 			// Check if the field is a slice, map, or pointer
 			if isSliceType(f.Type) {
