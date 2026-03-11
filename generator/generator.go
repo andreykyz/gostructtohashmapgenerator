@@ -391,7 +391,8 @@ func isStructType(typ string) bool {
 
 func isBuiltin(typ string) bool {
 	builtins := []string{"int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64",
-		"float32", "float64", "complex64", "complex128", "string", "bool", "byte", "rune", "error"}
+		"float32", "float64", "complex64", "complex128", "string", "bool", "byte", "rune", "error",
+		"time.Time", "time.Duration"}
 	for _, b := range builtins {
 		if typ == b {
 			return true
