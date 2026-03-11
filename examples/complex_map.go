@@ -4,23 +4,45 @@ package examples
 
 import (
 	"fmt"
-
 	"github.com/andreykyz/gostructtohashmapgenerator/examples/models"
 )
 
 // ComplexStructToMap converts a ComplexStruct to map[string]any.
 func ComplexStructToMap(c ComplexStruct) map[string]any {
-	m := make(map[string]any)
-	m["name"] = c.Name
-	m["count"] = c.Count
-	m["active"] = c.Active
-	m["tags"] = c.Tags
-	m["users"] = models.UserToMap(c.Users)
-	m["metadata"] = map[string]models.MetadataToMap(c.Metadata)
-	m["inner"] = c.Inner
-	m["ref"] = models.UserToMap(c.Ref)
-	m["categories"] = c.Categories
-	return m
+	out := make(map[string]any)
+	out["name"] = c.Name
+	out["count"] = c.Count
+	out["active"] = c.Active
+	out["tags"] = c.Tags
+	// Convert slice Users
+	if c.Users != nil {
+		sliceVal := make([]any, len(c.Users))
+		for i, v := range c.Users {
+			sliceVal[i] = models.UserToMap(v)
+		}
+		out["users"] = sliceVal
+	} else {
+		out["users"] = nil
+	}
+	// Convert map Metadata
+	if c.Metadata != nil {
+		mapVal := make(map[string]any, len(c.Metadata))
+		for k, v := range c.Metadata {
+			mapVal[k] = models.MetadataToMap(v)
+		}
+		out["metadata"] = mapVal
+	} else {
+		out["metadata"] = nil
+	}
+	out["inner"] = c.Inner
+	// Convert pointer Ref
+	if c.Ref != nil {
+		out["ref"] = models.UserToMap(*c.Ref)
+	} else {
+		out["ref"] = nil
+	}
+	out["categories"] = c.Categories
+	return out
 }
 
 // MapToComplexStruct converts a map[string]any to a ComplexStruct.
@@ -64,25 +86,41 @@ func MapToComplexStruct(m map[string]any) (ComplexStruct, error) {
 		return result, fmt.Errorf("field %q missing", "tags")
 	}
 	if val, ok := m["users"]; ok {
-		if mVal, ok := val.(map[string]any); ok {
-			nested, err := MapToUser(mVal)
-			if err != nil {
-				return result, fmt.Errorf("field %q: %v", "users", err)
+		if sliceVal, ok := val.([]any); ok {
+			out := make([]models.User, len(sliceVal))
+			for i, v := range sliceVal {
+				if mVal, ok := v.(map[string]any); ok {
+					nested, err := models.MapToUser(mVal)
+					if err != nil {
+						return result, fmt.Errorf("field %q[%d]: %v", "users", i, err)
+					}
+					out[i] = nested
+				} else {
+					return result, fmt.Errorf("field %q[%d]: expected map[string]any, got %T", "users", i, v)
+				}
 			}
-			result.Users = nested
+			result.Users = out
 		} else {
-			return result, fmt.Errorf("field %q: expected map[string]any, got %T", "users", val)
+			return result, fmt.Errorf("field %q: expected []any, got %T", "users", val)
 		}
 	} else {
 		return result, fmt.Errorf("field %q missing", "users")
 	}
 	if val, ok := m["metadata"]; ok {
-		if mVal, ok := val.(map[string]any); ok {
-			nested, err := MapToMetadata(mVal)
-			if err != nil {
-				return result, fmt.Errorf("field %q: %v", "metadata", err)
+		if mapVal, ok := val.(map[string]any); ok {
+			out := make(map[string]models.Metadata, len(mapVal))
+			for k, v := range mapVal {
+				if mVal, ok := v.(map[string]any); ok {
+					nested, err := models.MapToMetadata(mVal)
+					if err != nil {
+						return result, fmt.Errorf("field %q[%s]: %v", "metadata", k, err)
+					}
+					out[k] = nested
+				} else {
+					return result, fmt.Errorf("field %q[%s]: expected map[string]any, got %T", "metadata", k, v)
+				}
 			}
-			result.Metadata = nested
+			result.Metadata = out
 		} else {
 			return result, fmt.Errorf("field %q: expected map[string]any, got %T", "metadata", val)
 		}
@@ -99,14 +137,16 @@ func MapToComplexStruct(m map[string]any) (ComplexStruct, error) {
 		return result, fmt.Errorf("field %q missing", "inner")
 	}
 	if val, ok := m["ref"]; ok {
-		if mVal, ok := val.(map[string]any); ok {
-			nested, err := MapToUser(mVal)
+		if val == nil {
+			result.Ref = nil
+		} else if mVal, ok := val.(map[string]any); ok {
+			nested, err := models.MapToUser(mVal)
 			if err != nil {
 				return result, fmt.Errorf("field %q: %v", "ref", err)
 			}
-			result.Ref = nested
+			result.Ref = &nested
 		} else {
-			return result, fmt.Errorf("field %q: expected map[string]any, got %T", "ref", val)
+			return result, fmt.Errorf("field %q: expected map[string]any or nil, got %T", "ref", val)
 		}
 	} else {
 		return result, fmt.Errorf("field %q missing", "ref")

@@ -8,12 +8,12 @@ import (
 
 // UserToMap converts a User to map[string]any.
 func UserToMap(u User) map[string]any {
-	m := make(map[string]any)
-	m["id"] = u.ID
-	m["username"] = u.Username
-	m["email"] = u.Email
-	m["active"] = u.Active
-	return m
+	out := make(map[string]any)
+	out["id"] = u.ID
+	out["username"] = u.Username
+	out["email"] = u.Email
+	out["active"] = u.Active
+	return out
 }
 
 // MapToUser converts a map[string]any to a User.
