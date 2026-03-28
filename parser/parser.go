@@ -126,10 +126,6 @@ func extractTagValue(tag, key string) string {
 		if tagKey == key {
 			return value
 		}
-		// Skip comma
-		if comma := strings.Index(tag, ","); comma >= 0 {
-			tag = tag[comma+1:]
-		}
 	}
 	return ""
 }
