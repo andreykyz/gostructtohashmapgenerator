@@ -56,7 +56,7 @@ func TestParseFile(t *testing.T) {
 }
 
 func TestParseAllStructs(t *testing.T) {
-	structs, err := ParseAllStructs("../examples/person.go")
+	structs, err := ParseAllStructs("../examples/person.go", "structtomap")
 	if err != nil {
 		t.Fatalf("ParseAllStructs failed: %v", err)
 	}

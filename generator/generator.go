@@ -23,7 +23,7 @@ func Generate(inputFile string, opts Options) ([]byte, error) {
 		opts.Tag = "structtomap"
 	}
 	// Get all structs in the file
-	allStructs, err := parser.ParseAllStructs(inputFile)
+	allStructs, err := parser.ParseAllStructs(inputFile, opts.Tag)
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +97,16 @@ func hasTaggedField(st parser.StructInfo, opts Options) bool {
 	return false
 }
 
+// tagKey extracts the key from a tag value, stripping options like "omitempty".
+func tagKey(tagValue string) string {
+	if tagValue == "" {
+		return ""
+	}
+	// Split by comma, take first part
+	parts := strings.Split(tagValue, ",")
+	return parts[0]
+}
+
 // formatImports returns a formatted import block.
 func formatImports(imports []parser.ImportInfo, needFmt bool) string {
 	importMap := make(map[string]string) // path -> alias
@@ -142,16 +152,6 @@ func converterForType(typ string, structMap map[string]parser.StructInfo) string
 	if _, ok := structMap[typ]; ok {
 		return typ + "ToMap"
 	}
-	// If the type contains a dot, assume it's a qualified type from another package.
-	// We'll generate a converter using the same qualified name.
-	if strings.Contains(typ, ".") {
-		// Ensure the base type is exported (starts with uppercase)
-		parts := strings.Split(typ, ".")
-		base := parts[len(parts)-1]
-		if len(base) > 0 && base[0] >= 'A' && base[0] <= 'Z' {
-			return typ + "ToMap"
-		}
-	}
 	return ""
 }
 
@@ -167,16 +167,6 @@ func reverseConverterForType(typ string, structMap map[string]parser.StructInfo)
 	// If the type is defined in the same file, we have a converter
 	if _, ok := structMap[typ]; ok {
 		return "MapTo" + typ
-	}
-	// If the type contains a dot, assume it's a qualified type from another package.
-	if strings.Contains(typ, ".") {
-		parts := strings.Split(typ, ".")
-		base := parts[len(parts)-1]
-		if len(base) > 0 && base[0] >= 'A' && base[0] <= 'Z' {
-			// Keep the package prefix
-			pkg := strings.Join(parts[:len(parts)-1], ".")
-			return pkg + ".MapTo" + base
-		}
 	}
 	return ""
 }
@@ -194,7 +184,7 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 		if f.TagValue == "" && !opts.All {
 			continue
 		}
-		key := f.TagValue
+		key := tagKey(f.TagValue)
 		if key == "" {
 			key = f.Name
 		}
@@ -260,7 +250,7 @@ func generateReverseStructFunction(st parser.StructInfo, opts Options, structMap
 		if f.TagValue == "" && !opts.All {
 			continue
 		}
-		key := f.TagValue
+		key := tagKey(f.TagValue)
 		if key == "" {
 			key = f.Name
 		}

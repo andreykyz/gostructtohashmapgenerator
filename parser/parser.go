@@ -24,7 +24,7 @@ type StructInfo struct {
 
 // ParseFile parses a Go source file and returns all structs that have at least one field with the given tag.
 func ParseFile(filename, tag string) ([]StructInfo, error) {
-	structs, err := ParseAllStructs(filename)
+	structs, err := ParseAllStructs(filename, tag)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,8 @@ func ParseFile(filename, tag string) ([]StructInfo, error) {
 }
 
 // ParseAllStructs returns all struct definitions in the file, regardless of tags.
-func ParseAllStructs(filename string) ([]StructInfo, error) {
+// The tag parameter specifies which struct tag to extract values from (e.g., "structtomap").
+func ParseAllStructs(filename, tag string) ([]StructInfo, error) {
 	src, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -78,8 +79,8 @@ func ParseAllStructs(filename string) ([]StructInfo, error) {
 			tagValue := ""
 			if field.Tag != nil {
 				tagStr := field.Tag.Value
-				// Extract tag value for the structtomap tag (default key)
-				tagValue = extractTagValue(tagStr, "structtomap")
+				// Extract tag value for the specified tag
+				tagValue = extractTagValue(tagStr, tag)
 			}
 			fields = append(fields, StructField{
 				Name:     fieldName,
