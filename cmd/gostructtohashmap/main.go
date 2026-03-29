@@ -9,6 +9,8 @@ import (
 	"github.com/andreykyz/gostructtohashmapgenerator/generator"
 )
 
+var Version = "0.2.1"
+
 func main() {
 	var (
 		input   = flag.String("input", "", "Input Go source file containing structs")
@@ -16,8 +18,14 @@ func main() {
 		tag     = flag.String("tag", "structtomap", "Struct tag to look for")
 		all     = flag.Bool("all", false, "Include fields without the tag")
 		reverse = flag.Bool("reverse", false, "Generate reverse conversion functions (MapTo...)")
+		version = flag.Bool("version", false, "Print version")
 	)
 	flag.Parse()
+
+	if *version {
+		fmt.Printf("gostructtohashmapgenerator %s\n", Version)
+		os.Exit(0)
+	}
 
 	if *input == "" {
 		fmt.Fprintln(os.Stderr, "Error: -input is required")
