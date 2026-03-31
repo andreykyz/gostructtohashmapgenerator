@@ -12,7 +12,6 @@ import (
 type StructField struct {
 	Name     string // Field name as in source
 	Type     string // Go type expression
-	Tag      string // Raw tag string (including backticks)
 	TagValue string // Extracted value of the structtomap tag, empty if not present
 }
 
@@ -85,7 +84,6 @@ func ParseAllStructs(filename, tag string) ([]StructInfo, error) {
 			fields = append(fields, StructField{
 				Name:     fieldName,
 				Type:     typeExpr,
-				Tag:      field.Tag.Value,
 				TagValue: tagValue,
 			})
 		}
