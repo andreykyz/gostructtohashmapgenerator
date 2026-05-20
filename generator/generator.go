@@ -152,6 +152,16 @@ func converterForType(typ string, structMap map[string]parser.StructInfo) string
 	if _, ok := structMap[typ]; ok {
 		return typ + "ToMap"
 	}
+	// If the type contains a dot, assume it's a qualified type from another package.
+	// We'll generate a converter using the same qualified name.
+	if strings.Contains(typ, ".") {
+		// Ensure the base type is exported (starts with uppercase)
+		parts := strings.Split(typ, ".")
+		base := parts[len(parts)-1]
+		if len(base) > 0 && base[0] >= 'A' && base[0] <= 'Z' {
+			return typ + "ToMap"
+		}
+	}
 	return ""
 }
 
@@ -168,6 +178,17 @@ func reverseConverterForType(typ string, structMap map[string]parser.StructInfo)
 	if _, ok := structMap[typ]; ok {
 		return "MapTo" + typ
 	}
+	// If the type contains a dot, assume it's a qualified type from another package.
+	if strings.Contains(typ, ".") {
+		parts := strings.Split(typ, ".")
+		base := parts[len(parts)-1]
+		if len(base) > 0 && base[0] >= 'A' && base[0] <= 'Z' {
+			// Keep the package prefix
+			pkg := strings.Join(parts[:len(parts)-1], ".")
+			return pkg + ".MapTo" + base
+		}
+	}
+
 	return ""
 }
 
