@@ -24,6 +24,7 @@ func ComplexStructToMap(c ComplexStruct) map[string]any {
 	} else {
 		out["users"] = nil
 	}
+	out["users_in"] = c.UsersIn
 	// Convert map Metadata
 	if c.Metadata != nil {
 		mapVal := make(map[string]any, len(c.Metadata))
@@ -41,9 +42,12 @@ func ComplexStructToMap(c ComplexStruct) map[string]any {
 	} else {
 		out["ref"] = nil
 	}
+	out["active_user"] = models.UserToMap(c.ActiveUser)
 	out["categories"] = c.Categories
 	out["active_id"] = int(c.ActiveID)
 	out["active_name"] = string(c.ActiveName)
+	out["account"] = c.Account
+	out["accounts"] = c.Accounts
 	return out
 }
 
@@ -108,6 +112,12 @@ func MapToComplexStruct(m map[string]any) (ComplexStruct, error) {
 	} else {
 		return result, fmt.Errorf("field %q missing", "users")
 	}
+	if val, ok := m["users_in"]; ok {
+		// WARNING: no safe conversion for type %s
+		result.UsersIn = val.(models.Users)
+	} else {
+		return result, fmt.Errorf("field %q missing", "users_in")
+	}
 	if val, ok := m["metadata"]; ok {
 		if mapVal, ok := val.(map[string]any); ok {
 			out := make(map[string]models.Metadata, len(mapVal))
@@ -153,6 +163,19 @@ func MapToComplexStruct(m map[string]any) (ComplexStruct, error) {
 	} else {
 		return result, fmt.Errorf("field %q missing", "ref")
 	}
+	if val, ok := m["active_user"]; ok {
+		if mVal, ok := val.(map[string]any); ok {
+			nested, err := models.MapToUser(mVal)
+			if err != nil {
+				return result, fmt.Errorf("field %q: %v", "active_user", err)
+			}
+			result.ActiveUser = nested
+		} else {
+			return result, fmt.Errorf("field %q: expected map[string]any, got %T", "active_user", val)
+		}
+	} else {
+		return result, fmt.Errorf("field %q missing", "active_user")
+	}
 	if val, ok := m["categories"]; ok {
 		// WARNING: no safe conversion for type %s
 		result.Categories = val.(map[string][]string)
@@ -176,6 +199,18 @@ func MapToComplexStruct(m map[string]any) (ComplexStruct, error) {
 		}
 	} else {
 		return result, fmt.Errorf("field %q missing", "active_name")
+	}
+	if val, ok := m["account"]; ok {
+		// WARNING: no safe conversion for type %s
+		result.Account = val.(Account)
+	} else {
+		return result, fmt.Errorf("field %q missing", "account")
+	}
+	if val, ok := m["accounts"]; ok {
+		// WARNING: no safe conversion for type %s
+		result.Accounts = val.(Accounts)
+	} else {
+		return result, fmt.Errorf("field %q missing", "accounts")
 	}
 	return result, nil
 }

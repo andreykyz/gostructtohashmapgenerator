@@ -14,6 +14,8 @@ type ComplexStruct struct {
 	Tags []string `structtomap:"tags"`
 	// Slice of structs from another package
 	Users []models.User `structtomap:"users"`
+	// Slice of structs from another package
+	UsersIn models.Users `structtomap:"users_in"`
 	// Map of string to Metadata struct (nested)
 	Metadata map[string]models.Metadata `structtomap:"metadata"`
 	// Nested struct defined inline
@@ -23,10 +25,14 @@ type ComplexStruct struct {
 	} `structtomap:"inner"`
 	// Pointer to a struct (may be nil)
 	Ref *models.User `structtomap:"ref"`
+	// Field of to a struct
+	ActiveUser models.User `structtomap:"active_user"`
 	// Map of string to slice of strings
 	Categories map[string][]string `structtomap:"categories"`
 	// Typed int
 	ActiveID models.UserID `structtomap:"active_id"`
 	// Typed string
 	ActiveName models.UserName `structtomap:"active_name"`
+	Account    Account         `structtomap:"account"`
+	Accounts   Accounts        `structtomap:"accounts"`
 }

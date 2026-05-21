@@ -1,3 +1,5 @@
 module github.com/andreykyz/gostructtohashmapgenerator
 
-go 1.26.1
+go 1.26
+
+require github.com/google/uuid v1.6.0 // indirect

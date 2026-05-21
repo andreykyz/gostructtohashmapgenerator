@@ -9,3 +9,5 @@ type User struct {
 	Email    string `structtomap:"email"`
 	Active   bool   `structtomap:"active"`
 }
+
+type Users []User
