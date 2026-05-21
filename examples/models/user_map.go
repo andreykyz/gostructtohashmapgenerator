@@ -20,15 +20,8 @@ func UserToMap(u User) map[string]any {
 func MapToUser(m map[string]any) (User, error) {
 	var result User
 	if val, ok := m["id"]; ok {
-		// int conversion (simplified)
-		switch v := val.(type) {
-		case int:
-			result.ID = int(v)
-		case float64:
-			result.ID = int(int(v))
-		default:
-			return result, fmt.Errorf("field: expected numeric, got %T", val)
-		}
+		// WARNING: no safe conversion for type %s
+		result.ID = val.(UserID)
 	} else {
 		return result, fmt.Errorf("field %q missing", "id")
 	}

@@ -25,4 +25,8 @@ type ComplexStruct struct {
 	Ref *models.User `structtomap:"ref"`
 	// Map of string to slice of strings
 	Categories map[string][]string `structtomap:"categories"`
+	// Typed int
+	ActiveID models.UserID `structtomap:"active_id"`
+	// Typed string
+	ActiveName models.UserName `structtomap:"active_name"`
 }
