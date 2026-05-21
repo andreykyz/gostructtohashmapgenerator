@@ -9,7 +9,7 @@ import (
 	"github.com/andreykyz/gostructtohashmapgenerator/generator"
 )
 
-var Version = "0.4"
+var Version = "0.5"
 
 func main() {
 	var (

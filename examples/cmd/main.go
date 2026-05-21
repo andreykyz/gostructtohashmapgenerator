@@ -90,6 +90,8 @@ func main() {
 			"cat1": {"a", "b", "c"},
 			"cat2": {"x", "y"},
 		},
+		ActiveID:   models.UserID(42),
+		ActiveName: models.UserName("typed_string"),
 	}
 	complexMap := examples.ComplexStructToMap(complex)
 	fmt.Printf("ComplexStructToMap (partial): %#v\n", limitMapDepth(complexMap, 2))
@@ -97,8 +99,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("MapToComplexStruct error: %v", err)
 	}
-	fmt.Printf("MapToComplexStruct result: Name=%s, Count=%d, Active=%v\n",
-		complexBack.Name, complexBack.Count, complexBack.Active)
+	fmt.Printf("MapToComplexStruct result: Name=%s, Count=%d, Active=%v, ActiveID=%d, ActiveName=%s\n",
+		complexBack.Name, complexBack.Count, complexBack.Active, complexBack.ActiveID, complexBack.ActiveName)
 
 	// 4. Account (cross‑package)
 	fmt.Println("\n--- Account (cross‑package) ---")

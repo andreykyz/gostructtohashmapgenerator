@@ -42,8 +42,8 @@ func ComplexStructToMap(c ComplexStruct) map[string]any {
 		out["ref"] = nil
 	}
 	out["categories"] = c.Categories
-	out["active_id"] = models.UserIDToMap(c.ActiveID)
-	out["active_name"] = models.UserNameToMap(c.ActiveName)
+	out["active_id"] = int(c.ActiveID)
+	out["active_name"] = string(c.ActiveName)
 	return out
 }
 
@@ -160,27 +160,19 @@ func MapToComplexStruct(m map[string]any) (ComplexStruct, error) {
 		return result, fmt.Errorf("field %q missing", "categories")
 	}
 	if val, ok := m["active_id"]; ok {
-		if mVal, ok := val.(map[string]any); ok {
-			nested, err := models.MapToUserID(mVal)
-			if err != nil {
-				return result, fmt.Errorf("field %q: %v", "active_id", err)
-			}
-			result.ActiveID = nested
+		if v, ok := val.(int); ok {
+			result.ActiveID = models.UserID(v)
 		} else {
-			return result, fmt.Errorf("field %q: expected map[string]any, got %T", "active_id", val)
+			return result, fmt.Errorf("field %q: expected int, got %T", "active_id", val)
 		}
 	} else {
 		return result, fmt.Errorf("field %q missing", "active_id")
 	}
 	if val, ok := m["active_name"]; ok {
-		if mVal, ok := val.(map[string]any); ok {
-			nested, err := models.MapToUserName(mVal)
-			if err != nil {
-				return result, fmt.Errorf("field %q: %v", "active_name", err)
-			}
-			result.ActiveName = nested
+		if v, ok := val.(string); ok {
+			result.ActiveName = models.UserName(v)
 		} else {
-			return result, fmt.Errorf("field %q: expected map[string]any, got %T", "active_name", val)
+			return result, fmt.Errorf("field %q: expected string, got %T", "active_name", val)
 		}
 	} else {
 		return result, fmt.Errorf("field %q missing", "active_name")

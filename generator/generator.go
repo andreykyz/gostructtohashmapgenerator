@@ -2,8 +2,12 @@ package generator
 
 import (
 	"fmt"
+	"go/ast"
 	"go/format"
+	goparser "go/parser"
+	"go/token"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -57,18 +61,20 @@ func Generate(inputFile string, opts Options) ([]byte, error) {
 		}
 	}
 
+	// Parse imports from the source file
+	imports, _ := parser.ParseImports(inputFile)
+	qualifiedStructs := collectQualifiedStructs(inputFile, imports)
+
 	// Generate functions for each needed struct
 	funcs := make([]string, 0, len(needFunction))
 	for name := range needFunction {
 		st := structMap[name]
-		funcs = append(funcs, generateStructFunction(st, opts, structMap))
+		funcs = append(funcs, generateStructFunction(st, opts, structMap, qualifiedStructs))
 		if opts.Reverse {
-			funcs = append(funcs, generateReverseStructFunction(st, opts, structMap))
+			funcs = append(funcs, generateReverseStructFunction(st, opts, structMap, qualifiedStructs))
 		}
 	}
 
-	// Parse imports from the source file
-	imports, _ := parser.ParseImports(inputFile)
 	importBlock := formatImports(imports, opts.Reverse)
 
 	// Combine into a single file
@@ -95,6 +101,115 @@ func hasTaggedField(st parser.StructInfo, opts Options) bool {
 		}
 	}
 	return false
+}
+
+// parseTypeDefsInFile parses a Go file and returns a map from type name to its underlying type expression.
+// Returns "struct" for struct types, underlying type name for other type definitions (e.g., "int", "string"),
+// and empty string for unknown.
+func parseTypeDefsInFile(filePath string) map[string]string {
+	result := make(map[string]string)
+	src, err := os.ReadFile(filePath)
+	if err != nil {
+		return result
+	}
+	fset := token.NewFileSet()
+	f, err := goparser.ParseFile(fset, filePath, src, goparser.ParseComments)
+	if err != nil {
+		return result
+	}
+	for _, decl := range f.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
+			typeName := typeSpec.Name.Name
+			switch t := typeSpec.Type.(type) {
+			case *ast.StructType:
+				result[typeName] = "struct"
+			case *ast.Ident:
+				result[typeName] = t.Name
+			case *ast.SelectorExpr:
+				// qualified type like "models.User"
+				result[typeName] = fmt.Sprintf("%s.%s", t.X, t.Sel)
+			default:
+				// other complex types (array, map, etc.) - ignore for now
+				result[typeName] = ""
+			}
+		}
+	}
+	return result
+}
+
+// collectQualifiedStructs returns a map from qualified type name (e.g., "models.User") to its type info.
+// Value "struct" indicates a struct, otherwise it's the underlying type name (e.g., "int", "string").
+func collectQualifiedStructs(inputFile string, imports []parser.ImportInfo) map[string]string {
+	result := make(map[string]string)
+	if len(imports) == 0 {
+		return result
+	}
+	// Find module root (directory containing go.mod)
+	dir := filepath.Dir(inputFile)
+	var modDir string
+	for d := dir; d != ""; d = filepath.Dir(d) {
+		if _, err := os.Stat(filepath.Join(d, "go.mod")); err == nil {
+			modDir = d
+			break
+		}
+		if d == filepath.Dir(d) {
+			break
+		}
+	}
+	if modDir == "" {
+		// No go.mod found, cannot resolve local imports
+		return result
+	}
+	// Read module name
+	modData, err := os.ReadFile(filepath.Join(modDir, "go.mod"))
+	if err != nil {
+		return result
+	}
+	modLine := strings.Split(string(modData), "\n")[0]
+	if !strings.HasPrefix(modLine, "module ") {
+		return result
+	}
+	modulePath := strings.TrimSpace(strings.TrimPrefix(modLine, "module "))
+
+	for _, imp := range imports {
+		// Only consider imports within the same module
+		if !strings.HasPrefix(imp.Path, modulePath) {
+			continue
+		}
+		// Compute relative path from module root
+		rel := strings.TrimPrefix(imp.Path, modulePath+"/")
+		pkgDir := filepath.Join(modDir, rel)
+		// Check if directory exists
+		if fi, err := os.Stat(pkgDir); err != nil || !fi.IsDir() {
+			continue
+		}
+		// List .go files
+		entries, err := os.ReadDir(pkgDir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if strings.HasSuffix(entry.Name(), ".go") {
+				filePath := filepath.Join(pkgDir, entry.Name())
+				typeMap := parseTypeDefsInFile(filePath)
+				// Determine package name (last component of import path)
+				pkgName := filepath.Base(pkgDir)
+				for typeName, underlying := range typeMap {
+					qualified := pkgName + "." + typeName
+					result[qualified] = underlying
+				}
+			}
+		}
+	}
+	return result
 }
 
 // tagKey extracts the key from a tag value, stripping options like "omitempty".
@@ -140,7 +255,7 @@ func formatImports(imports []parser.ImportInfo, needFmt bool) string {
 }
 
 // converterForType returns the name of the ToMap function for a given type, or empty if no converter should be used.
-func converterForType(typ string, structMap map[string]parser.StructInfo) string {
+func converterForType(typ string, structMap map[string]parser.StructInfo, qualifiedTypeInfo map[string]string) string {
 	// Strip pointer and slice prefixes
 	typ = strings.TrimPrefix(typ, "*")
 	typ = strings.TrimPrefix(typ, "[]")
@@ -152,21 +267,25 @@ func converterForType(typ string, structMap map[string]parser.StructInfo) string
 	if _, ok := structMap[typ]; ok {
 		return typ + "ToMap"
 	}
-	// If the type contains a dot, assume it's a qualified type from another package.
-	// We'll generate a converter using the same qualified name.
+	// If the type contains a dot, check if it's a qualified struct.
 	if strings.Contains(typ, ".") {
 		// Ensure the base type is exported (starts with uppercase)
 		parts := strings.Split(typ, ".")
 		base := parts[len(parts)-1]
 		if len(base) > 0 && base[0] >= 'A' && base[0] <= 'Z' {
-			return typ + "ToMap"
+			// Check if this qualified type is known to be a struct
+			if qualifiedTypeInfo[typ] == "struct" {
+				return typ + "ToMap"
+			}
+			// Not a struct, treat as basic type (no converter)
+			return ""
 		}
 	}
 	return ""
 }
 
 // reverseConverterForType returns the name of the MapTo function for a given type, or empty if no converter should be used.
-func reverseConverterForType(typ string, structMap map[string]parser.StructInfo) string {
+func reverseConverterForType(typ string, structMap map[string]parser.StructInfo, qualifiedTypeInfo map[string]string) string {
 	// Strip pointer and slice prefixes
 	typ = strings.TrimPrefix(typ, "*")
 	typ = strings.TrimPrefix(typ, "[]")
@@ -178,14 +297,19 @@ func reverseConverterForType(typ string, structMap map[string]parser.StructInfo)
 	if _, ok := structMap[typ]; ok {
 		return "MapTo" + typ
 	}
-	// If the type contains a dot, assume it's a qualified type from another package.
+	// If the type contains a dot, check if it's a qualified struct.
 	if strings.Contains(typ, ".") {
 		parts := strings.Split(typ, ".")
 		base := parts[len(parts)-1]
 		if len(base) > 0 && base[0] >= 'A' && base[0] <= 'Z' {
-			// Keep the package prefix
-			pkg := strings.Join(parts[:len(parts)-1], ".")
-			return pkg + ".MapTo" + base
+			// Check if this qualified type is known to be a struct
+			if qualifiedTypeInfo[typ] == "struct" {
+				// Keep the package prefix
+				pkg := strings.Join(parts[:len(parts)-1], ".")
+				return pkg + ".MapTo" + base
+			}
+			// Not a struct, treat as basic type (no converter)
+			return ""
 		}
 	}
 
@@ -193,7 +317,7 @@ func reverseConverterForType(typ string, structMap map[string]parser.StructInfo)
 }
 
 // generateStructFunction creates a ToMap function for a single struct.
-func generateStructFunction(st parser.StructInfo, opts Options, structMap map[string]parser.StructInfo) string {
+func generateStructFunction(st parser.StructInfo, opts Options, structMap map[string]parser.StructInfo, qualifiedTypeInfo map[string]string) string {
 	funcName := st.Name + "ToMap"
 	recv := strings.ToLower(st.Name[:1])
 	lines := []string{
@@ -211,7 +335,7 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 		}
 		// Determine the element type and converter
 		elem := elementType(f.Type)
-		converter := converterForType(elem, structMap)
+		converter := converterForType(elem, structMap, qualifiedTypeInfo)
 		if converter != "" {
 			// Check if the field is a slice, map, or pointer
 			if isSliceType(f.Type) {
@@ -251,8 +375,48 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 				lines = append(lines, fmt.Sprintf("    out[%q] = %s(%s.%s)", key, converter, recv, f.Name))
 			}
 		} else {
-			// No converter, direct assignment
-			lines = append(lines, fmt.Sprintf("    out[%q] = %s.%s", key, recv, f.Name))
+			// No converter, check if it's a qualified defined type with underlying basic type
+			underlying := qualifiedTypeInfo[elem]
+			if underlying != "" && underlying != "struct" && isBuiltin(underlying) {
+				// Need to convert to underlying basic type
+				// Handle slices, maps, pointers of defined types
+				if isSliceType(f.Type) {
+					lines = append(lines, fmt.Sprintf("    // Convert slice %s of defined type %s", f.Name, elem))
+					lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
+					lines = append(lines, fmt.Sprintf("        sliceVal := make([]any, len(%s.%s))", recv, f.Name))
+					lines = append(lines, fmt.Sprintf("        for i, v := range %s.%s {", recv, f.Name))
+					lines = append(lines, fmt.Sprintf("            sliceVal[i] = %s(v)", underlying))
+					lines = append(lines, "        }")
+					lines = append(lines, fmt.Sprintf("        out[%q] = sliceVal", key))
+					lines = append(lines, "    } else {")
+					lines = append(lines, fmt.Sprintf("        out[%q] = nil", key))
+					lines = append(lines, "    }")
+				} else if isMapType(f.Type) {
+					lines = append(lines, fmt.Sprintf("    // Convert map %s of defined type %s", f.Name, elem))
+					lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
+					lines = append(lines, fmt.Sprintf("        mapVal := make(map[string]any, len(%s.%s))", recv, f.Name))
+					lines = append(lines, fmt.Sprintf("        for k, v := range %s.%s {", recv, f.Name))
+					lines = append(lines, fmt.Sprintf("            mapVal[k] = %s(v)", underlying))
+					lines = append(lines, "        }")
+					lines = append(lines, fmt.Sprintf("        out[%q] = mapVal", key))
+					lines = append(lines, "    } else {")
+					lines = append(lines, fmt.Sprintf("        out[%q] = nil", key))
+					lines = append(lines, "    }")
+				} else if isPointerType(f.Type) {
+					lines = append(lines, fmt.Sprintf("    // Convert pointer %s of defined type %s", f.Name, elem))
+					lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
+					lines = append(lines, fmt.Sprintf("        out[%q] = %s(*%s.%s)", key, underlying, recv, f.Name))
+					lines = append(lines, "    } else {")
+					lines = append(lines, fmt.Sprintf("        out[%q] = nil", key))
+					lines = append(lines, "    }")
+				} else {
+					// Direct conversion
+					lines = append(lines, fmt.Sprintf("    out[%q] = %s(%s.%s)", key, underlying, recv, f.Name))
+				}
+			} else {
+				// No converter, direct assignment
+				lines = append(lines, fmt.Sprintf("    out[%q] = %s.%s", key, recv, f.Name))
+			}
 		}
 	}
 	lines = append(lines, "    return out", "}")
@@ -260,7 +424,7 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 }
 
 // generateReverseStructFunction creates a MapTo function for a single struct.
-func generateReverseStructFunction(st parser.StructInfo, opts Options, structMap map[string]parser.StructInfo) string {
+func generateReverseStructFunction(st parser.StructInfo, opts Options, structMap map[string]parser.StructInfo, qualifiedTypeInfo map[string]string) string {
 	funcName := "MapTo" + st.Name
 	lines := []string{
 		fmt.Sprintf("// %s converts a map[string]any to a %s.", funcName, st.Name),
@@ -277,7 +441,7 @@ func generateReverseStructFunction(st parser.StructInfo, opts Options, structMap
 		}
 		// Determine the element type and whether we need a reverse converter
 		elem := elementType(f.Type)
-		converter := reverseConverterForType(elem, structMap)
+		converter := reverseConverterForType(elem, structMap, qualifiedTypeInfo)
 		if converter != "" {
 			// Nested struct: need to handle slices, maps, pointers
 			if isSliceType(f.Type) {
@@ -360,13 +524,73 @@ func generateReverseStructFunction(st parser.StructInfo, opts Options, structMap
 				lines = append(lines, fmt.Sprintf("    }"))
 			}
 		} else {
-			// Built-in type: attempt type assertion
-			lines = append(lines, fmt.Sprintf("    if val, ok := m[%q]; ok {", key))
-			// Generate type conversion based on f.Type
-			lines = append(lines, generateTypeConversion(f.Type, "val", fmt.Sprintf("result.%s", f.Name)))
-			lines = append(lines, fmt.Sprintf("    } else {"))
-			lines = append(lines, fmt.Sprintf("        return result, fmt.Errorf(\"field %%q missing\", %q)", key))
-			lines = append(lines, fmt.Sprintf("    }"))
+			// Check if it's a qualified defined type with underlying basic type
+			underlying := qualifiedTypeInfo[elem]
+			if underlying != "" && underlying != "struct" && isBuiltin(underlying) {
+				// Defined type with underlying basic type
+				// Handle slices, maps, pointers
+				if isSliceType(f.Type) {
+					lines = append(lines, fmt.Sprintf("    if val, ok := m[%q]; ok {", key))
+					lines = append(lines, fmt.Sprintf("        if sliceVal, ok := val.([]any); ok {"))
+					lines = append(lines, fmt.Sprintf("            out := make([]%s, len(sliceVal))", f.Type))
+					lines = append(lines, fmt.Sprintf("            for i, v := range sliceVal {"))
+					lines = append(lines, fmt.Sprintf("                // Convert each element from %s to %s", underlying, elem))
+					lines = append(lines, fmt.Sprintf("                switch vv := v.(type) {"))
+					lines = append(lines, fmt.Sprintf("                case %s:", underlying))
+					lines = append(lines, fmt.Sprintf("                    out[i] = %s(vv)", elem))
+					lines = append(lines, fmt.Sprintf("                default:"))
+					lines = append(lines, fmt.Sprintf("                    return result, fmt.Errorf(\"field %%q[%%d]: expected %s, got %%T\", %q, i, v)", underlying, key))
+					lines = append(lines, fmt.Sprintf("                }"))
+					lines = append(lines, fmt.Sprintf("            }"))
+					lines = append(lines, fmt.Sprintf("            result.%s = out", f.Name))
+					lines = append(lines, fmt.Sprintf("        } else {"))
+					lines = append(lines, fmt.Sprintf("            return result, fmt.Errorf(\"field %%q: expected []any, got %%T\", %q, val)", key))
+					lines = append(lines, fmt.Sprintf("        }"))
+					lines = append(lines, fmt.Sprintf("    } else {"))
+					lines = append(lines, fmt.Sprintf("        return result, fmt.Errorf(\"field %%q missing\", %q)", key))
+					lines = append(lines, fmt.Sprintf("    }"))
+				} else if isMapType(f.Type) {
+					// Map conversion - similar logic but more complex, skip for now
+					// Fall back to generic type conversion
+					lines = append(lines, fmt.Sprintf("    if val, ok := m[%q]; ok {", key))
+					lines = append(lines, generateTypeConversion(f.Type, "val", fmt.Sprintf("result.%s", f.Name)))
+					lines = append(lines, fmt.Sprintf("    } else {"))
+					lines = append(lines, fmt.Sprintf("        return result, fmt.Errorf(\"field %%q missing\", %q)", key))
+					lines = append(lines, fmt.Sprintf("    }"))
+				} else if isPointerType(f.Type) {
+					lines = append(lines, fmt.Sprintf("    if val, ok := m[%q]; ok {", key))
+					lines = append(lines, fmt.Sprintf("        if val == nil {"))
+					lines = append(lines, fmt.Sprintf("            result.%s = nil", f.Name))
+					lines = append(lines, fmt.Sprintf("        } else if v, ok := val.(%s); ok {", underlying))
+					lines = append(lines, fmt.Sprintf("            conv := %s(v)", elem))
+					lines = append(lines, fmt.Sprintf("            result.%s = &conv", f.Name))
+					lines = append(lines, fmt.Sprintf("        } else {"))
+					lines = append(lines, fmt.Sprintf("            return result, fmt.Errorf(\"field %%q: expected %s or nil, got %%T\", %q, val)", underlying, key))
+					lines = append(lines, fmt.Sprintf("        }"))
+					lines = append(lines, fmt.Sprintf("    } else {"))
+					lines = append(lines, fmt.Sprintf("        return result, fmt.Errorf(\"field %%q missing\", %q)", key))
+					lines = append(lines, fmt.Sprintf("    }"))
+				} else {
+					// Direct defined type
+					lines = append(lines, fmt.Sprintf("    if val, ok := m[%q]; ok {", key))
+					lines = append(lines, fmt.Sprintf("        if v, ok := val.(%s); ok {", underlying))
+					lines = append(lines, fmt.Sprintf("            result.%s = %s(v)", f.Name, elem))
+					lines = append(lines, fmt.Sprintf("        } else {"))
+					lines = append(lines, fmt.Sprintf("            return result, fmt.Errorf(\"field %%q: expected %s, got %%T\", %q, val)", underlying, key))
+					lines = append(lines, fmt.Sprintf("        }"))
+					lines = append(lines, fmt.Sprintf("    } else {"))
+					lines = append(lines, fmt.Sprintf("        return result, fmt.Errorf(\"field %%q missing\", %q)", key))
+					lines = append(lines, fmt.Sprintf("    }"))
+				}
+			} else {
+				// Built-in type: attempt type assertion
+				lines = append(lines, fmt.Sprintf("    if val, ok := m[%q]; ok {", key))
+				// Generate type conversion based on f.Type
+				lines = append(lines, generateTypeConversion(f.Type, "val", fmt.Sprintf("result.%s", f.Name)))
+				lines = append(lines, fmt.Sprintf("    } else {"))
+				lines = append(lines, fmt.Sprintf("        return result, fmt.Errorf(\"field %%q missing\", %q)", key))
+				lines = append(lines, fmt.Sprintf("    }"))
+			}
 		}
 	}
 	lines = append(lines, "    return result, nil", "}")
@@ -453,10 +677,10 @@ func elementType(typ string) string {
 }
 
 // fieldToMapExpr returns a Go expression that converts the field value to a map[string]any compatible value.
-func fieldToMapExpr(fieldType, fieldName, recv string, structMap map[string]parser.StructInfo) string {
+func fieldToMapExpr(fieldType, fieldName, recv string, structMap map[string]parser.StructInfo, qualifiedStructs map[string]string) string {
 	// Check if we need a converter for the element type
 	elem := elementType(fieldType)
-	converter := converterForType(elem, structMap)
+	converter := converterForType(elem, structMap, qualifiedStructs)
 	if converter == "" {
 		// No converter, direct assignment
 		return fmt.Sprintf("%s.%s", recv, fieldName)
