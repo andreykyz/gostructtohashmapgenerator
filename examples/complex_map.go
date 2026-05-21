@@ -44,10 +44,19 @@ func ComplexStructToMap(c ComplexStruct) map[string]any {
 	}
 	out["active_user"] = models.UserToMap(c.ActiveUser)
 	out["categories"] = c.Categories
-	out["active_id"] = int(c.ActiveID)
-	out["active_name"] = string(c.ActiveName)
-	out["account"] = c.Account
-	out["accounts"] = c.Accounts
+	out["active_id"] = c.ActiveID
+	out["active_name"] = c.ActiveName
+	out["account"] = AccountToMap(c.Account)
+	// Convert map Accounts
+	if c.Accounts != nil {
+		mapVal := make(map[string]any, len(c.Accounts))
+		for k, v := range c.Accounts {
+			mapVal[k] = AccountToMap(v)
+		}
+		out["accounts"] = mapVal
+	} else {
+		out["accounts"] = nil
+	}
 	return out
 }
 
@@ -183,32 +192,48 @@ func MapToComplexStruct(m map[string]any) (ComplexStruct, error) {
 		return result, fmt.Errorf("field %q missing", "categories")
 	}
 	if val, ok := m["active_id"]; ok {
-		if v, ok := val.(int); ok {
-			result.ActiveID = models.UserID(v)
-		} else {
-			return result, fmt.Errorf("field %q: expected int, got %T", "active_id", val)
-		}
+		// WARNING: no safe conversion for type %s
+		result.ActiveID = val.(models.UserID)
 	} else {
 		return result, fmt.Errorf("field %q missing", "active_id")
 	}
 	if val, ok := m["active_name"]; ok {
-		if v, ok := val.(string); ok {
-			result.ActiveName = models.UserName(v)
-		} else {
-			return result, fmt.Errorf("field %q: expected string, got %T", "active_name", val)
-		}
+		// WARNING: no safe conversion for type %s
+		result.ActiveName = val.(models.UserName)
 	} else {
 		return result, fmt.Errorf("field %q missing", "active_name")
 	}
 	if val, ok := m["account"]; ok {
-		// WARNING: no safe conversion for type %s
-		result.Account = val.(Account)
+		if mVal, ok := val.(map[string]any); ok {
+			nested, err := MapToAccount(mVal)
+			if err != nil {
+				return result, fmt.Errorf("field %q: %v", "account", err)
+			}
+			result.Account = nested
+		} else {
+			return result, fmt.Errorf("field %q: expected map[string]any, got %T", "account", val)
+		}
 	} else {
 		return result, fmt.Errorf("field %q missing", "account")
 	}
 	if val, ok := m["accounts"]; ok {
-		// WARNING: no safe conversion for type %s
-		result.Accounts = val.(Accounts)
+		if mapVal, ok := val.(map[string]any); ok {
+			out := make(Accounts, len(mapVal))
+			for k, v := range mapVal {
+				if mVal, ok := v.(map[string]any); ok {
+					nested, err := MapToAccount(mVal)
+					if err != nil {
+						return result, fmt.Errorf("field %q[%s]: %v", "accounts", k, err)
+					}
+					out[k] = nested
+				} else {
+					return result, fmt.Errorf("field %q[%s]: expected map[string]any, got %T", "accounts", k, v)
+				}
+			}
+			result.Accounts = out
+		} else {
+			return result, fmt.Errorf("field %q: expected map[string]any, got %T", "accounts", val)
+		}
 	} else {
 		return result, fmt.Errorf("field %q missing", "accounts")
 	}

@@ -117,6 +117,12 @@ func parseTypeDefsInFile(filePath string) map[string]string {
 	if err != nil {
 		return result
 	}
+	// helper to extract source representation of an expression
+	exprToString := func(expr ast.Expr) string {
+		start := fset.Position(expr.Pos()).Offset
+		end := fset.Position(expr.End()).Offset
+		return string(src[start:end])
+	}
 	for _, decl := range f.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
 		if !ok || genDecl.Tok != token.TYPE {
@@ -136,8 +142,16 @@ func parseTypeDefsInFile(filePath string) map[string]string {
 			case *ast.SelectorExpr:
 				// qualified type like "models.User"
 				result[typeName] = fmt.Sprintf("%s.%s", t.X, t.Sel)
+			case *ast.MapType:
+				result[typeName] = exprToString(t)
+			case *ast.ArrayType:
+				// slice ([]T) or array ([N]T)
+				result[typeName] = exprToString(t)
+			case *ast.StarExpr:
+				// pointer *T
+				result[typeName] = exprToString(t)
 			default:
-				// other complex types (array, map, etc.) - ignore for now
+				// other complex types (interface, chan, etc.) - ignore for now
 				result[typeName] = ""
 			}
 		}
@@ -178,6 +192,22 @@ func collectQualifiedStructs(inputFile string, imports []parser.ImportInfo) map[
 		return result
 	}
 	modulePath := strings.TrimSpace(strings.TrimPrefix(modLine, "module "))
+
+	// Also parse files in the same directory (same package) to collect local type definitions
+	samePkgDir := filepath.Dir(inputFile)
+	entries, err := os.ReadDir(samePkgDir)
+	if err == nil {
+		for _, entry := range entries {
+			if strings.HasSuffix(entry.Name(), ".go") {
+				filePath := filepath.Join(samePkgDir, entry.Name())
+				typeMap := parseTypeDefsInFile(filePath)
+				for typeName, underlying := range typeMap {
+					// Add unqualified type name (same package)
+					result[typeName] = underlying
+				}
+			}
+		}
+	}
 
 	for _, imp := range imports {
 		// Only consider imports within the same module
@@ -267,6 +297,10 @@ func converterForType(typ string, structMap map[string]parser.StructInfo, qualif
 	if _, ok := structMap[typ]; ok {
 		return typ + "ToMap"
 	}
+	// Check if the type is known to be a struct (could be from same package or imported)
+	if qualifiedTypeInfo[typ] == "struct" {
+		return typ + "ToMap"
+	}
 	// If the type contains a dot, check if it's a qualified struct.
 	if strings.Contains(typ, ".") {
 		// Ensure the base type is exported (starts with uppercase)
@@ -312,6 +346,10 @@ func reverseConverterForType(typ string, structMap map[string]parser.StructInfo,
 			return ""
 		}
 	}
+	// Check if the type is known to be a struct (same package, not qualified)
+	if qualifiedTypeInfo[typ] == "struct" {
+		return "MapTo" + typ
+	}
 
 	return ""
 }
@@ -333,12 +371,13 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 		if key == "" {
 			key = f.Name
 		}
+		resolvedType := resolveUnderlyingType(f.Type, qualifiedTypeInfo)
 		// Determine the element type and converter
-		elem := elementType(f.Type)
+		elem := elementType(f.Type, qualifiedTypeInfo)
 		converter := converterForType(elem, structMap, qualifiedTypeInfo)
 		if converter != "" {
 			// Check if the field is a slice, map, or pointer
-			if isSliceType(f.Type) {
+			if isSliceType(resolvedType) {
 				// Generate slice conversion loop
 				lines = append(lines, fmt.Sprintf("    // Convert slice %s", f.Name))
 				lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
@@ -350,7 +389,7 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 				lines = append(lines, "    } else {")
 				lines = append(lines, fmt.Sprintf("        out[%q] = nil", key))
 				lines = append(lines, "    }")
-			} else if isMapType(f.Type) {
+			} else if isMapType(resolvedType) {
 				// Generate map conversion loop
 				lines = append(lines, fmt.Sprintf("    // Convert map %s", f.Name))
 				lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
@@ -362,7 +401,7 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 				lines = append(lines, "    } else {")
 				lines = append(lines, fmt.Sprintf("        out[%q] = nil", key))
 				lines = append(lines, "    }")
-			} else if isPointerType(f.Type) {
+			} else if isPointerType(resolvedType) {
 				// Generate pointer conversion
 				lines = append(lines, fmt.Sprintf("    // Convert pointer %s", f.Name))
 				lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
@@ -380,7 +419,7 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 			if underlying != "" && underlying != "struct" && isBuiltin(underlying) {
 				// Need to convert to underlying basic type
 				// Handle slices, maps, pointers of defined types
-				if isSliceType(f.Type) {
+				if isSliceType(resolvedType) {
 					lines = append(lines, fmt.Sprintf("    // Convert slice %s of defined type %s", f.Name, elem))
 					lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
 					lines = append(lines, fmt.Sprintf("        sliceVal := make([]any, len(%s.%s))", recv, f.Name))
@@ -391,7 +430,7 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 					lines = append(lines, "    } else {")
 					lines = append(lines, fmt.Sprintf("        out[%q] = nil", key))
 					lines = append(lines, "    }")
-				} else if isMapType(f.Type) {
+				} else if isMapType(resolvedType) {
 					lines = append(lines, fmt.Sprintf("    // Convert map %s of defined type %s", f.Name, elem))
 					lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
 					lines = append(lines, fmt.Sprintf("        mapVal := make(map[string]any, len(%s.%s))", recv, f.Name))
@@ -402,7 +441,7 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 					lines = append(lines, "    } else {")
 					lines = append(lines, fmt.Sprintf("        out[%q] = nil", key))
 					lines = append(lines, "    }")
-				} else if isPointerType(f.Type) {
+				} else if isPointerType(resolvedType) {
 					lines = append(lines, fmt.Sprintf("    // Convert pointer %s of defined type %s", f.Name, elem))
 					lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
 					lines = append(lines, fmt.Sprintf("        out[%q] = %s(*%s.%s)", key, underlying, recv, f.Name))
@@ -439,12 +478,13 @@ func generateReverseStructFunction(st parser.StructInfo, opts Options, structMap
 		if key == "" {
 			key = f.Name
 		}
+		resolvedType := resolveUnderlyingType(f.Type, qualifiedTypeInfo)
 		// Determine the element type and whether we need a reverse converter
-		elem := elementType(f.Type)
+		elem := elementType(f.Type, qualifiedTypeInfo)
 		converter := reverseConverterForType(elem, structMap, qualifiedTypeInfo)
 		if converter != "" {
 			// Nested struct: need to handle slices, maps, pointers
-			if isSliceType(f.Type) {
+			if isSliceType(resolvedType) {
 				// Expect val to be []any, each element map[string]any
 				lines = append(lines, fmt.Sprintf("    if val, ok := m[%q]; ok {", key))
 				lines = append(lines, fmt.Sprintf("        if sliceVal, ok := val.([]any); ok {"))
@@ -467,7 +507,7 @@ func generateReverseStructFunction(st parser.StructInfo, opts Options, structMap
 				lines = append(lines, fmt.Sprintf("    } else {"))
 				lines = append(lines, fmt.Sprintf("        return result, fmt.Errorf(\"field %%q missing\", %q)", key))
 				lines = append(lines, fmt.Sprintf("    }"))
-			} else if isMapType(f.Type) {
+			} else if isMapType(resolvedType) {
 				// Expect val to be map[string]any, each value map[string]any
 				lines = append(lines, fmt.Sprintf("    if val, ok := m[%q]; ok {", key))
 				lines = append(lines, fmt.Sprintf("        if mapVal, ok := val.(map[string]any); ok {"))
@@ -490,7 +530,7 @@ func generateReverseStructFunction(st parser.StructInfo, opts Options, structMap
 				lines = append(lines, fmt.Sprintf("    } else {"))
 				lines = append(lines, fmt.Sprintf("        return result, fmt.Errorf(\"field %%q missing\", %q)", key))
 				lines = append(lines, fmt.Sprintf("    }"))
-			} else if isPointerType(f.Type) {
+			} else if isPointerType(resolvedType) {
 				// Expect val to be nil or map[string]any
 				lines = append(lines, fmt.Sprintf("    if val, ok := m[%q]; ok {", key))
 				lines = append(lines, fmt.Sprintf("        if val == nil {"))
@@ -624,6 +664,30 @@ func isStructType(typ string) bool {
 	return strings.Contains(typ, "struct") || (len(typ) > 0 && typ[0] >= 'A' && typ[0] <= 'Z' && !isBuiltin(typ))
 }
 
+// resolveUnderlyingType recursively resolves a type name using the qualifiedTypeInfo map.
+// Returns the underlying type expression (e.g., "map[string]Account") or the original type if not found.
+func resolveUnderlyingType(typ string, qualifiedTypeInfo map[string]string) string {
+	visited := make(map[string]bool)
+	for {
+		if visited[typ] {
+			// cycle detected, return original
+			return typ
+		}
+		visited[typ] = true
+		underlying, ok := qualifiedTypeInfo[typ]
+		if !ok || underlying == "" {
+			// not a known named type
+			return typ
+		}
+		// If underlying is "struct", treat as struct (no further resolution)
+		if underlying == "struct" {
+			return typ
+		}
+		// Continue resolving
+		typ = underlying
+	}
+}
+
 func isBuiltin(typ string) bool {
 	builtins := []string{"int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64",
 		"float32", "float64", "complex64", "complex128", "string", "bool", "byte", "rune", "error",
@@ -656,30 +720,37 @@ func isPointerType(typ string) bool {
 // For map "map[K]V" returns "V".
 // For pointer "*T" returns "T".
 // For other types returns the original type.
-func elementType(typ string) string {
-	if isSliceType(typ) {
-		return typ[2:]
+// qualifiedTypeInfo is optional; if provided, named types are resolved to their underlying types.
+func elementType(typ string, qualifiedTypeInfo map[string]string) string {
+	// Resolve named types to their underlying representation
+	resolved := typ
+	if qualifiedTypeInfo != nil {
+		resolved = resolveUnderlyingType(typ, qualifiedTypeInfo)
 	}
-	if isMapType(typ) {
+	if isSliceType(resolved) {
+		// slice inner type is after "[]"
+		return resolved[2:]
+	}
+	if isMapType(resolved) {
 		// Find the closing bracket after "map["
 		// Simple heuristic: assume map[K]V where K is a simple type (no nested maps).
 		// We'll find the first ']' after 'map['.
-		start := strings.Index(typ, "[")
-		end := strings.Index(typ, "]")
+		start := strings.Index(resolved, "[")
+		end := strings.Index(resolved, "]")
 		if start >= 0 && end > start {
-			return typ[end+1:]
+			return resolved[end+1:]
 		}
 	}
-	if isPointerType(typ) {
-		return typ[1:]
+	if isPointerType(resolved) {
+		return resolved[1:]
 	}
-	return typ
+	return resolved
 }
 
 // fieldToMapExpr returns a Go expression that converts the field value to a map[string]any compatible value.
 func fieldToMapExpr(fieldType, fieldName, recv string, structMap map[string]parser.StructInfo, qualifiedStructs map[string]string) string {
 	// Check if we need a converter for the element type
-	elem := elementType(fieldType)
+	elem := elementType(fieldType, qualifiedStructs)
 	converter := converterForType(elem, structMap, qualifiedStructs)
 	if converter == "" {
 		// No converter, direct assignment

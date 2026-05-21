@@ -12,3 +12,5 @@ type Account struct {
 }
 
 type AccountMap map[uuid.UUID]Account
+
+type Accounts map[uuid.UUIDg]Account

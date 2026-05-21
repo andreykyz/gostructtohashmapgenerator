@@ -92,6 +92,38 @@ func main() {
 		},
 		ActiveID:   models.UserID(42),
 		ActiveName: models.UserName("typed_string"),
+		Account: examples.Account{
+			ID: 2001,
+			Owner: models.User{
+				ID:       10,
+				Username: "account_owner",
+				Email:    "owner@example.com",
+				Active:   true,
+			},
+			Balance: 9999.99,
+		},
+		Accounts: examples.Accounts{
+			"acc1": {
+				ID: 3001,
+				Owner: models.User{
+					ID:       11,
+					Username: "acc1_owner",
+					Email:    "acc1@example.com",
+					Active:   true,
+				},
+				Balance: 500.50,
+			},
+			"acc2": {
+				ID: 3002,
+				Owner: models.User{
+					ID:       12,
+					Username: "acc2_owner",
+					Email:    "acc2@example.com",
+					Active:   false,
+				},
+				Balance: 750.25,
+			},
+		},
 	}
 	complexMap := examples.ComplexStructToMap(complex)
 	fmt.Printf("ComplexStructToMap (partial): %#v\n", limitMapDepth(complexMap, 2))
