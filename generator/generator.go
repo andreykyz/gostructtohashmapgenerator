@@ -394,8 +394,14 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 				lines = append(lines, fmt.Sprintf("    // Convert map %s", f.Name))
 				lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
 				lines = append(lines, fmt.Sprintf("        mapVal := make(map[string]any, len(%s.%s))", recv, f.Name))
-				lines = append(lines, fmt.Sprintf("        for k, v := range %s.%s {", recv, f.Name))
-				lines = append(lines, fmt.Sprintf("            mapVal[k] = %s(v)", converter))
+				keyType := mapKeyType(f.Type, qualifiedTypeInfo)
+				if keyType == "string" {
+					lines = append(lines, fmt.Sprintf("        for k, v := range %s.%s {", recv, f.Name))
+					lines = append(lines, fmt.Sprintf("            mapVal[k] = %s(v)", converter))
+				} else {
+					lines = append(lines, fmt.Sprintf("        for k, v := range %s.%s {", recv, f.Name))
+					lines = append(lines, fmt.Sprintf("            mapVal[fmt.Sprintf(\"%%v\", k)] = %s(v)", converter))
+				}
 				lines = append(lines, "        }")
 				lines = append(lines, fmt.Sprintf("        out[%q] = mapVal", key))
 				lines = append(lines, "    } else {")
@@ -434,8 +440,14 @@ func generateStructFunction(st parser.StructInfo, opts Options, structMap map[st
 					lines = append(lines, fmt.Sprintf("    // Convert map %s of defined type %s", f.Name, elem))
 					lines = append(lines, fmt.Sprintf("    if %s.%s != nil {", recv, f.Name))
 					lines = append(lines, fmt.Sprintf("        mapVal := make(map[string]any, len(%s.%s))", recv, f.Name))
-					lines = append(lines, fmt.Sprintf("        for k, v := range %s.%s {", recv, f.Name))
-					lines = append(lines, fmt.Sprintf("            mapVal[k] = %s(v)", underlying))
+					keyType := mapKeyType(f.Type, qualifiedTypeInfo)
+					if keyType == "string" {
+						lines = append(lines, fmt.Sprintf("        for k, v := range %s.%s {", recv, f.Name))
+						lines = append(lines, fmt.Sprintf("            mapVal[k] = %s(v)", underlying))
+					} else {
+						lines = append(lines, fmt.Sprintf("        for k, v := range %s.%s {", recv, f.Name))
+						lines = append(lines, fmt.Sprintf("            mapVal[fmt.Sprintf(\"%%v\", k)] = %s(v)", underlying))
+					}
 					lines = append(lines, "        }")
 					lines = append(lines, fmt.Sprintf("        out[%q] = mapVal", key))
 					lines = append(lines, "    } else {")
@@ -512,16 +524,37 @@ func generateReverseStructFunction(st parser.StructInfo, opts Options, structMap
 				lines = append(lines, fmt.Sprintf("    if val, ok := m[%q]; ok {", key))
 				lines = append(lines, fmt.Sprintf("        if mapVal, ok := val.(map[string]any); ok {"))
 				lines = append(lines, fmt.Sprintf("            out := make(%s, len(mapVal))", f.Type))
-				lines = append(lines, fmt.Sprintf("            for k, v := range mapVal {"))
-				lines = append(lines, fmt.Sprintf("                if mVal, ok := v.(map[string]any); ok {"))
-				lines = append(lines, fmt.Sprintf("                    nested, err := %s(mVal)", converter))
-				lines = append(lines, fmt.Sprintf("                    if err != nil {"))
-				lines = append(lines, fmt.Sprintf("                        return result, fmt.Errorf(\"field %%q[%%s]: %%v\", %q, k, err)", key))
-				lines = append(lines, fmt.Sprintf("                    }"))
-				lines = append(lines, fmt.Sprintf("                    out[k] = nested"))
-				lines = append(lines, fmt.Sprintf("                } else {"))
-				lines = append(lines, fmt.Sprintf("                    return result, fmt.Errorf(\"field %%q[%%s]: expected map[string]any, got %%T\", %q, k, v)", key))
-				lines = append(lines, fmt.Sprintf("                }"))
+				keyType := mapKeyType(f.Type, qualifiedTypeInfo)
+				if keyType == "string" {
+					lines = append(lines, fmt.Sprintf("            for k, v := range mapVal {"))
+					lines = append(lines, fmt.Sprintf("                if mVal, ok := v.(map[string]any); ok {"))
+					lines = append(lines, fmt.Sprintf("                    nested, err := %s(mVal)", converter))
+					lines = append(lines, fmt.Sprintf("                    if err != nil {"))
+					lines = append(lines, fmt.Sprintf("                        return result, fmt.Errorf(\"field %%q[%%s]: %%v\", %q, k, err)", key))
+					lines = append(lines, fmt.Sprintf("                    }"))
+					lines = append(lines, fmt.Sprintf("                    out[k] = nested"))
+					lines = append(lines, fmt.Sprintf("                } else {"))
+					lines = append(lines, fmt.Sprintf("                    return result, fmt.Errorf(\"field %%q[%%s]: expected map[string]any, got %%T\", %q, k, v)", key))
+					lines = append(lines, fmt.Sprintf("                }"))
+				} else {
+					// Non-string key: need conversion from string to keyType
+					lines = append(lines, fmt.Sprintf("            for k, v := range mapVal {"))
+					lines = append(lines, fmt.Sprintf("                if mVal, ok := v.(map[string]any); ok {"))
+					lines = append(lines, fmt.Sprintf("                    nested, err := %s(mVal)", converter))
+					lines = append(lines, fmt.Sprintf("                    if err != nil {"))
+					lines = append(lines, fmt.Sprintf("                        return result, fmt.Errorf(\"field %%q[%%s]: %%v\", %q, k, err)", key))
+					lines = append(lines, fmt.Sprintf("                    }"))
+					// Generate conversion based on keyType
+					lines = append(lines, fmt.Sprintf("                    // Convert string key to type %s", keyType))
+					lines = append(lines, fmt.Sprintf("                    var keyVal %s", keyType))
+					lines = append(lines, fmt.Sprintf("                    if err := keyVal.UnmarshalText([]byte(k)); err != nil {"))
+					lines = append(lines, fmt.Sprintf("                        return result, fmt.Errorf(\"field %%q[%%s]: invalid key: %%v\", %q, k, err)", key))
+					lines = append(lines, fmt.Sprintf("                    }"))
+					lines = append(lines, fmt.Sprintf("                    out[keyVal] = nested"))
+					lines = append(lines, fmt.Sprintf("                } else {"))
+					lines = append(lines, fmt.Sprintf("                    return result, fmt.Errorf(\"field %%q[%%s]: expected map[string]any, got %%T\", %q, k, v)", key))
+					lines = append(lines, fmt.Sprintf("                }"))
+				}
 				lines = append(lines, fmt.Sprintf("            }"))
 				lines = append(lines, fmt.Sprintf("            result.%s = out", f.Name))
 				lines = append(lines, fmt.Sprintf("        } else {"))
@@ -745,6 +778,44 @@ func elementType(typ string, qualifiedTypeInfo map[string]string) string {
 		return resolved[1:]
 	}
 	return resolved
+}
+
+// mapKeyType returns the key type of a map type string, or empty if not a map.
+// Example: "map[uuid.UUID]Account" -> "uuid.UUID".
+func mapKeyType(typ string, qualifiedTypeInfo map[string]string) string {
+	resolved := typ
+	if qualifiedTypeInfo != nil {
+		resolved = resolveUnderlyingType(typ, qualifiedTypeInfo)
+	}
+	if !isMapType(resolved) {
+		return ""
+	}
+	// Find the substring between "map[" and "]"
+	start := strings.Index(resolved, "[")
+	end := strings.Index(resolved, "]")
+	if start >= 0 && end > start {
+		return resolved[start+1 : end]
+	}
+	return ""
+}
+
+// mapValueType returns the value type of a map type string, or empty if not a map.
+// Example: "map[uuid.UUID]Account" -> "Account".
+func mapValueType(typ string, qualifiedTypeInfo map[string]string) string {
+	resolved := typ
+	if qualifiedTypeInfo != nil {
+		resolved = resolveUnderlyingType(typ, qualifiedTypeInfo)
+	}
+	if !isMapType(resolved) {
+		return ""
+	}
+	// Find the substring after "]"
+	start := strings.Index(resolved, "[")
+	end := strings.Index(resolved, "]")
+	if start >= 0 && end > start {
+		return resolved[end+1:]
+	}
+	return ""
 }
 
 // fieldToMapExpr returns a Go expression that converts the field value to a map[string]any compatible value.

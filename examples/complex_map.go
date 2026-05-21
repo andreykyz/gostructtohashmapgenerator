@@ -4,6 +4,9 @@ package examples
 
 import (
 	"fmt"
+
+	"github.com/google/uuid"
+
 	"github.com/andreykyz/gostructtohashmapgenerator/examples/models"
 )
 
@@ -51,7 +54,7 @@ func ComplexStructToMap(c ComplexStruct) map[string]any {
 	if c.Accounts != nil {
 		mapVal := make(map[string]any, len(c.Accounts))
 		for k, v := range c.Accounts {
-			mapVal[k] = AccountToMap(v)
+			mapVal[fmt.Sprintf("%v", k)] = AccountToMap(v)
 		}
 		out["accounts"] = mapVal
 	} else {
@@ -225,7 +228,12 @@ func MapToComplexStruct(m map[string]any) (ComplexStruct, error) {
 					if err != nil {
 						return result, fmt.Errorf("field %q[%s]: %v", "accounts", k, err)
 					}
-					out[k] = nested
+					// Convert string key to type uuid.UUID
+					var keyVal uuid.UUID
+					if err := keyVal.UnmarshalText([]byte(k)); err != nil {
+						return result, fmt.Errorf("field %q[%s]: invalid key: %v", "accounts", k, err)
+					}
+					out[keyVal] = nested
 				} else {
 					return result, fmt.Errorf("field %q[%s]: expected map[string]any, got %T", "accounts", k, v)
 				}

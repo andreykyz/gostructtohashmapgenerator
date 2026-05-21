@@ -11,6 +11,4 @@ type Account struct {
 	Balance float64     `structtomap:"balance"`
 }
 
-type AccountMap map[uuid.UUID]Account
-
-type Accounts map[uuid.UUIDg]Account
+type Accounts map[uuid.UUID]Account

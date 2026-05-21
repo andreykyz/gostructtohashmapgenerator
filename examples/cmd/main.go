@@ -103,7 +103,7 @@ func main() {
 			Balance: 9999.99,
 		},
 		Accounts: examples.Accounts{
-			"acc1": {
+			[16]byte{1, 2, 3, 4}: {
 				ID: 3001,
 				Owner: models.User{
 					ID:       11,
@@ -113,7 +113,7 @@ func main() {
 				},
 				Balance: 500.50,
 			},
-			"acc2": {
+			[16]byte{4, 3, 2, 1}: {
 				ID: 3002,
 				Owner: models.User{
 					ID:       12,
